@@ -1,0 +1,13 @@
+- insert:
+    - id: skill-auto-load-typesafe
+      name: dsh-skill-auto-load-typesafe
+      config:
+        presetIds: [standard]
+        model: jev-latest
+        threshold: 0.75
+        maxSkills: 3
+        timeoutMs: 5000
+        maxRetries: 0
+        maxInputBytes: 65536
+        maxInjectedBytes: 32768
+        onSelectionError: continue
