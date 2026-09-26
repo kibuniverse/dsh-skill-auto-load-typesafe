@@ -93,4 +93,5 @@ jobs:
           npm stage --help >/dev/null
 
       - name: Stage package on npm
-        run: npm stage publish release-artifact/*.tgz --ignore-scripts
+        # Explicit local paths avoid npm interpreting directory/name as owner/repo.
+        run: npm stage publish ./release-artifact/*.tgz --ignore-scripts
