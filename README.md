@@ -10,7 +10,7 @@
 
 | 项 | 值 |
 |---|---|
-| npm 包 | [`dsh-skill-auto-load-typesafe`](https://www.npmjs.com/package/dsh-skill-auto-load-typesafe)，本文对应版本 `0.0.4`；已公开版本以 npm 页面为准 |
+| npm 包 | [`dsh-skill-auto-load-typesafe`](https://www.npmjs.com/package/dsh-skill-auto-load-typesafe)，本文对应版本 `0.0.5`；已公开版本以 npm 页面为准 |
 | 已验证版本 | Harness `@deepseek-ai/dsh@0.1.5-rc.3`、Cordis `4.0.2`、TypeSafe SDK `0.6.0`、Node `^22.19.0 \|\| >=24.0.0` |
 | LLM 依赖范围 | `@deepseek-ai/dsh-llm@^0.1.5-rc.3`，允许后续 `0.1.x` 正式版本，不跨到 `0.2.0`；其他 Harness peer dependencies 仍固定 |
 | 挂载方式 | Host 单实例；`dsh.bundle.patch` 指向 `cordis.patch.yml` |
@@ -160,7 +160,7 @@ npm 发包由 [GitHub Release](https://github.com/kibuniverse/dsh-skill-auto-loa
 常规发布流程：
 
 1. 执行 `npm version <新版本> --no-git-tag-version` 同步更新 `package.json` 和 `package-lock.json`，更新 README，提交并合并到 `main`。
-2. 在该提交上创建 `v<package.version>` 标签（例如 `v0.0.4`），并发布同名 GitHub Release。
+2. 在该提交上创建 `v<package.version>` 标签（例如 `v0.0.5`），并发布同名 GitHub Release。
 3. `Stage npm release` 工作流自动验证并提交 staging；在 npm 的 **Staged Packages** 中检查内容并用 2FA 批准。
 4. 工作流成功表示已暂存，GitHub Release 已创建也不代表 npm 已公开。完成审批后再确认 npm 上的版本和 `latest` 标签。
 
