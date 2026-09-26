@@ -83,7 +83,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-skill-auto-load-typesafe
 | `baseURL` | `https://api.typesafe.ai` | SDK API root；正式服务要求 HTTPS，测试允许 loopback HTTP |
 | `model` | `jev-latest` | TypeSafe 模型；需要稳定评估时使用账户支持的固定版本 |
 | `threshold` | `0.75` | Noul 返回 yes 概率的入选阈值；不是独立的 confidence 字段 |
-| `maxSkills` | `3` | 每次最多加载数量，按概率降序、同概率按名称排序 |
+| `maxSkills` | `3` | 每次最多新增的技能数量，按概率降序、同概率按名称排序；已可见、不可用或超出正文预算的技能不占名额 |
 | `timeoutMs` | `5000` | pre-step 自动加载操作的总时间预算，同时作为 SDK 单次请求超时 |
 | `maxRetries` | `0` | SDK 最大重试次数；重试仍受总时间预算限制 |
 | `maxInputBytes` | `65536` | 序列化的完整 TypeSafe 请求大小上限；超限明确报错，不截断用户输入或目录 |
@@ -103,13 +103,13 @@ dsh plugin --profile web add /absolute/path/to/dsh-skill-auto-load-typesafe
 
 显式 `/skill-name` 交由 Harness 自带 `tool-skill` 处理。已有显式加载消息不会重复注入。历史去重比较当前 `deriveMessages()` 中的完整正文；压缩后正文不再可见时允许重新加载，内容更新后也可以重新注入。预算不足时跳过整个 skill，不截断指令。
 
-缺 key、认证失败、权限错误、无效 API 请求和本地配置错误明确失败；临时网络或响应错误按 `onSelectionError` 处理。用户取消和插件卸载始终取消请求，不作为正常降级吞掉。卸载等待在途操作结束，再关闭审计存储。
+缺 key、认证失败、权限错误、无效 API 请求和本地配置错误明确失败；临时网络或响应错误按 `onSelectionError` 处理。审计写入和技能读取失败也会中止本次处理，不受 `continue` 降级影响。超时降级仅处理本次 deadline 引发的取消，不掩盖其他错误。用户取消和插件卸载始终取消请求，不作为正常降级吞掉。卸载等待在途操作结束，再关闭审计存储。审计写入不可取消，因此慢速存储仍可能使实际耗时超过 `timeoutMs`。
 
 ## 持久化与数据流
 
 主模型看到的 skill 正文通过标准 `user/message` 持久化；来源为 `skill-auto-load-typesafe`，带有 skill 名称和审计请求 ID。插件不新增 Session 事件类型，因此移除插件后，标准 Session 读取器仍能重放这些消息。
 
-TypeSafe 调用前，插件在 `ctx.storageDomain` 的 `skill_auto_load_typesafe` domain、`requests` 表写入 `started` 记录。记录包含 Session ID、用户消息 ID、endpoint 和实际 JSON 请求。完成后保存验证后的响应、选择名称、已准备的正文名称和跳过原因；失败保存分类。`completed` 表示插件已经准备好消息，不保证后续主模型请求成功。进程意外退出可能留下 `started`；插件不会据此自动重发。取消可能发生在正文准备或审计落盘后，最终是否提交以 Session 日志为准。
+TypeSafe 调用前，插件在 `ctx.storageDomain` 的 `skill_auto_load_typesafe` domain、`requests` 表写入 `started` 记录。记录包含 Session ID、用户消息 ID、endpoint 和实际 JSON 请求。完成后保存验证后的响应、选择名称、已准备的正文名称和跳过原因；失败保存分类。`selected` 包含所有达到阈值的候选，`loaded` 仅包含实际新增的技能，`skipped` 记录达到加载数量上限前检查过的跳过项。`completed` 表示插件已经准备好消息，不保证后续主模型请求成功。进程意外退出可能留下 `started`；插件不会据此自动重发。取消可能发生在正文准备或审计落盘后，最终是否提交以 Session 日志为准。
 
 默认 JSON backend 将该 domain 放在 Harness 的 storage root 下，通常为 `$DSH_HOME/storages`。这些审计记录不随 Session 导出或 fork 复制。当前版本不自动清理审计历史，部署方需要管理保留周期和存储空间。
 
@@ -135,6 +135,8 @@ npm run build
 ```
 
 适配版本见顶部[概要](#概要)；依赖通过 npm 安装，不依赖相邻 Harness 源码目录。Harness API 仍在演进，升级 peer dependencies 后应重新执行全部测试。
+
+GitHub Actions 在 push 和 pull request 时使用 Node 22.19.0 执行 `npm ci`、类型检查、单元/集成测试和构建，不运行付费的 `test:live`。
 
 测试使用真实 TypeSafe SDK、Cordis、skill registry、Session 投影和文件存储，HTTP 响应由测试提供。无需真实 key，也不产生 API 费用。尚未验证真实 TypeSafe 账户下的选择准确率或延迟。
 

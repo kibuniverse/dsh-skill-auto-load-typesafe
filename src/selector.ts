@@ -66,7 +66,6 @@ export function parseSelection(raw: unknown, candidates: readonly Candidate[], c
   })
   const selected = scores.filter(score => score.probability >= config.threshold)
     .sort((a, b) => b.probability - a.probability || a.name.localeCompare(b.name))
-    .slice(0, config.maxSkills)
   return { response, scores, selected }
 }
 

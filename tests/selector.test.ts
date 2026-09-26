@@ -14,9 +14,10 @@ describe('TypeSafe selection', () => {
     expect(buildRequest('Hello', [], config)).toBeNull()
   })
 
-  it('selects multiple skills by threshold, probability and configured cap', () => {
+  it('ranks all skills above the threshold so skipped skills do not consume the loading cap', () => {
     expect(parseSelection(answer([0.8, 0.99, 0.9]), candidates, config).selected).toEqual([
       { name: 'tests', probability: 0.99 }, { name: 'slides', probability: 0.9 },
+      { name: 'review', probability: 0.8 },
     ])
   })
 

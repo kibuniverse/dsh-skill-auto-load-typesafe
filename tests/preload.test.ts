@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import SkillRegistry from '@deepseek-ai/dsh-skill'
+import SkillRegistry, { renderSkillContent } from '@deepseek-ai/dsh-skill'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { Session } from '@deepseek-ai/dsh-session'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -34,6 +34,59 @@ function reply(values: number[]) {
 }
 
 describe('skill preloading', () => {
+  it.each(['already-visible', 'unavailable', 'content-budget'])('fills the loading cap after skipping a %s skill', async reason => {
+    ctx.skills.register({ name: 'tests', description: 'Write tests', source: 'runtime', content: 'Test carefully.' })
+    ctx.skills.register({ name: 'slides', description: 'Make slides', source: 'runtime', content: 'Make slides.' })
+    const agent = makeAgent(ctx)
+    const lookup = { cwd: agent.session.header.cwd, scope: agent, signal: signal() }
+    const review = (await ctx.skills.get('review', lookup))!
+    const tests = (await ctx.skills.get('tests', lookup))!
+    const snapshot = await ctx.skills.snapshot(lookup)
+    reply(snapshot.skills.map(skill => skill.name === 'review' ? 0.99 : skill.name === 'tests' ? 0.9 : 0.8))
+    if (reason === 'already-visible') {
+      agent.session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: renderSkillContent(review) }],
+        source: { kind: 'skill-invocation', name: 'review', form: 'instructions' },
+      }), { surfaceOp: 'append' })
+    }
+    const get = vi.spyOn(ctx.skills, 'get')
+    if (reason === 'unavailable') get.mockResolvedValueOnce(undefined)
+    if (reason === 'content-budget') get.mockResolvedValueOnce({ ...review, content: 'x'.repeat(10000) })
+    const options = resolveConfig({ maxSkills: 1, maxInjectedBytes: Buffer.byteLength(renderSkillContent(tests), 'utf8') })
+    const result = await preload(ctx, options, audit, agent, { kind: 'enter', messages: [user()] }, signal())
+    expect(result.kind === 'enter' && result.messages.length).toBe(2)
+    expect(records.at(-1)).toMatchObject({ loaded: ['tests'], skipped: [{ name: 'review', reason }] })
+    expect(get).toHaveBeenCalledTimes(2)
+    get.mockRestore()
+  })
+
+  it.each(['started', 'completed', 'failed'] as const)('propagates an audit write failure at %s', async status => {
+    const fetch = status === 'failed'
+      ? vi.fn(async () => Response.json({}, { status: 503 }))
+      : reply([0.9])
+    vi.stubGlobal('fetch', fetch)
+    const failure = new Error('audit storage unavailable')
+    const write = async (id: string, record: AuditRecord) => {
+      if (record.status === status) throw failure
+      await audit(id, record)
+    }
+    const decision: PreStepDecision = { kind: 'enter', messages: [user()] }
+    await expect(preload(ctx, config, write, makeAgent(ctx), decision, signal())).rejects.toBe(failure)
+    expect(fetch).toHaveBeenCalledTimes(status === 'started' ? 0 : 1)
+    expect(decision.messages).toHaveLength(1)
+  })
+
+  it('records and propagates a skill read failure without partially injecting messages', async () => {
+    reply([0.9])
+    const failure = new Error('skill read failed')
+    const get = vi.spyOn(ctx.skills, 'get').mockRejectedValue(failure)
+    const decision: PreStepDecision = { kind: 'enter', messages: [user()] }
+    await expect(preload(ctx, config, audit, makeAgent(ctx), decision, signal())).rejects.toBe(failure)
+    expect(records.at(-1)).toMatchObject({ status: 'failed', failure: 'skill-loading-failed' })
+    expect(decision.messages).toHaveLength(1)
+    get.mockRestore()
+  })
+
   it('calls the real SDK, audits before dispatch and preserves the pre-step decision', async () => {
     const fetch = vi.fn(async (_url: string, init: RequestInit) => {
       expect(records[0]?.status).toBe('started')

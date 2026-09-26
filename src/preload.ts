@@ -88,11 +88,13 @@ export async function preload(
   } catch (error) {
     const fatal = error instanceof AuthenticationError || error instanceof PermissionDeniedError
       || error instanceof BadRequestError || error instanceof UnprocessableEntityError
-    const failure = signal.aborted ? 'cancelled-or-deadline' : fatal ? 'configuration-or-authentication' : 'selection-failed'
-    await audit(requestId, { ...receipt, status: signal.aborted ? 'aborted' : 'failed', finishedAt: Date.now(), failure })
-    signal.throwIfAborted()
+    const failure = fatal ? 'configuration-or-authentication' : signal.aborted ? 'cancelled-or-deadline' : 'selection-failed'
+    await audit(requestId, { ...receipt, status: !fatal && signal.aborted ? 'aborted' : 'failed', finishedAt: Date.now(), failure })
     // SDK error messages may contain provider response bodies; report only our classification.
-    if (fatal || config.onSelectionError === 'fail') throw new Error(`TypeSafe skill selection: ${failure}`)
+    // A deadline reached during audit writing must not replace an authentication/configuration failure.
+    if (fatal) throw new Error(`TypeSafe skill selection: ${failure}`)
+    signal.throwIfAborted()
+    if (config.onSelectionError === 'fail') throw new Error(`TypeSafe skill selection: ${failure}`)
     ctx.logger.warn(`TypeSafe skill selection skipped: ${failure}`)
     return decision
   }
@@ -104,6 +106,7 @@ export async function preload(
     .flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text))
   try {
     for (const selected of result.selected) {
+      if (additions.length >= config.maxSkills) break
       const skill = await ctx.skills.get(selected.name, lookup)
       signal.throwIfAborted()
       if (!skill || !isModelInvocable(skill)) {

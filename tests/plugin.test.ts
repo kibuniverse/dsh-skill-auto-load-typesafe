@@ -9,7 +9,7 @@ import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as plugin from '../src/index.js'
-import { auditSpec } from '../src/audit.js'
+import { auditSpec, type AuditRecord } from '../src/audit.js'
 import { answer, Credentials, makeAgent, user } from './helpers.js'
 
 let ctx: Context
@@ -28,9 +28,43 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   await ctx.fiber.dispose()
+  vi.restoreAllMocks()
   vi.useRealTimers()
   vi.unstubAllGlobals()
   await rm(root, { recursive: true, force: true })
+})
+
+it.each([401, 403, 400, 422])('preserves HTTP %s failures when audit writing crosses the deadline', async status => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'private provider details' }, { status })))
+  const open = vi.spyOn(ctx.storageDomain, 'open')
+  await ctx.plugin(plugin, { timeoutMs: 100 })
+  const domain = await open.mock.results[0]!.value
+  const table = domain.table('requests')
+  const put = table.put.bind(table)
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  vi.spyOn(table, 'put').mockImplementation(async (id, record) => {
+    if ((record as AuditRecord).status === 'failed') await vi.advanceTimersByTimeAsync(100)
+    await put(id, record)
+  })
+  await expect(dispatch()).rejects.toThrow('configuration-or-authentication')
+})
+
+it('does not hide an audit failure just because the deadline has elapsed', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json(answer([0.9]))))
+  const open = vi.spyOn(ctx.storageDomain, 'open')
+  await ctx.plugin(plugin, { timeoutMs: 100 })
+  const domain = await open.mock.results[0]!.value
+  const table = domain.table('requests')
+  const put = table.put.bind(table)
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  vi.spyOn(table, 'put').mockImplementation(async (id, record) => {
+    if ((record as AuditRecord).status === 'completed') {
+      await vi.advanceTimersByTimeAsync(100)
+      throw new Error('audit storage unavailable')
+    }
+    await put(id, record)
+  })
+  await expect(dispatch()).rejects.toThrow('audit storage unavailable')
 })
 
 function dispatch(signal = new AbortController().signal) {
@@ -76,19 +110,23 @@ it('unloading aborts in-flight SDK work and waits before closing audit storage',
   await reopened.close()
 })
 
-it('an overall deadline continues the accepted step without injected skills', async () => {
+it.each(['continue', 'fail'] as const)('handles an overall deadline with onSelectionError=%s', async onSelectionError => {
   let started!: () => void
   const ready = new Promise<void>(resolve => { started = resolve })
   vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
     init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true })
     started()
   })))
-  await ctx.plugin(plugin, { timeoutMs: 100 })
+  await ctx.plugin(plugin, { timeoutMs: 100, onSelectionError })
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   const operation = dispatch()
+  const outcome = onSelectionError === 'fail'
+    ? expect(operation).rejects.toThrow('deadline exceeded')
+    : operation.then(result => {
+      expect(result.kind === 'enter' && result.messages.length).toBe(1)
+      expect(result.kind === 'enter' && result.startsRequestSeries).toBe(true)
+    })
   await ready
   await vi.advanceTimersByTimeAsync(100)
-  const result = await operation
-  expect(result.kind === 'enter' && result.messages.length).toBe(1)
-  expect(result.kind === 'enter' && result.startsRequestSeries).toBe(true)
+  await outcome
 })

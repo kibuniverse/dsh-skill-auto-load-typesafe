@@ -37,7 +37,7 @@ export async function apply(ctx: Context, input: Config = {}): Promise<void> {
       } catch (error) {
         signal.throwIfAborted()
         shutdown.signal.throwIfAborted()
-        if (deadline.signal.aborted && config.onSelectionError === 'continue') {
+        if (deadline.signal.aborted && error === deadline.signal.reason && config.onSelectionError === 'continue') {
           ctx.logger.warn('TypeSafe skill selection skipped: deadline exceeded')
           return decision
         }
