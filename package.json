@@ -8,6 +8,10 @@
     "type": "git",
     "url": "git+https://github.com/kibuniverse/dsh-skill-auto-load-typesafe.git"
   },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "type": "module",
   "engines": { "node": "^22.19.0 || >=24.0.0" },
   "main": "./dist/index.js",
@@ -23,6 +27,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:live": "npm run build && node scripts/live-smoke.mjs",
+    "prepublishOnly": "npm run typecheck && npm test",
     "prepack": "npm run build"
   },
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },

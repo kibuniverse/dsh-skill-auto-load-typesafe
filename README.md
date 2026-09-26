@@ -10,7 +10,7 @@
 
 | 项 | 值 |
 |---|---|
-| npm 包 | [`dsh-skill-auto-load-typesafe`](https://www.npmjs.com/package/dsh-skill-auto-load-typesafe)，当前 `latest` = `0.0.2` |
+| npm 包 | [`dsh-skill-auto-load-typesafe`](https://www.npmjs.com/package/dsh-skill-auto-load-typesafe)，当前 `latest` = `0.0.3` |
 | 适配版本 | Harness `@deepseek-ai/dsh@0.1.5-rc.3`（npm `latest`）、Cordis `4.0.2`、TypeSafe SDK `0.6.0`、Node `^22.19.0 \|\| >=24.0.0` |
 | 挂载方式 | Host 单实例；`dsh.bundle.patch` 指向 `cordis.patch.yml` |
 | 依赖服务 | `agents`、`skills`、`credentials`、`storageDomain`（base-backed profile 默认提供） |
@@ -137,6 +137,27 @@ npm run build
 适配版本见顶部[概要](#概要)；依赖通过 npm 安装，不依赖相邻 Harness 源码目录。Harness API 仍在演进，升级 peer dependencies 后应重新执行全部测试。
 
 GitHub Actions 在 push 和 pull request 时使用 Node 22.19.0 执行 `npm ci`、类型检查、单元/集成测试和构建，不运行付费的 `test:live`。
+
+## 发布
+
+npm 发包由 [GitHub Release](https://github.com/kibuniverse/dsh-skill-auto-load-typesafe/releases) 触发，不从维护者电脑直接上传，也不使用长期 `NPM_TOKEN`。工作流使用 npm Trusted Publishing（OIDC）和 staged publishing：先在无发布权限的任务中检查标签与 `package.json` 版本一致，完成类型检查、测试、构建并生成 tarball；再由只运行固定版本官方 Actions 的独立任务将该 tarball 提交到 npm staging。维护者检查内容并通过 2FA 批准后，版本才会公开。Trusted Publishing 会为公开包自动生成 provenance。
+
+首次启用时，在 npm 包的 **Settings → Trusted Publisher** 添加 GitHub Actions：
+
+- Organization or user：`kibuniverse`
+- Repository：`dsh-skill-auto-load-typesafe`
+- Workflow filename：`release.yml`
+- Environment：留空
+- Allowed action：仅允许 `npm stage publish`，不要启用 `npm publish`
+
+确认一次 OIDC staging 成功后，将 npm 的 **Publishing access** 设置为 **Require two-factor authentication and disallow tokens**，并撤销不再需要的 npm automation token。
+
+常规发布流程：
+
+1. 在独立 PR 中更新 `package.json` 和 `package-lock.json` 的版本，并合并到 `main`。
+2. 在该提交上创建 `v<package.version>` 标签（例如 `v0.0.4`），并发布同名 GitHub Release。
+3. `Stage npm release` 工作流自动验证并提交 staging；在 npm 的 **Staged Packages** 中检查内容并用 2FA 批准。
+4. npm 版本不可覆盖；如果 staging 内容有误，拒绝该 stage、修复并使用新的版本号，不要复用已公开的版本。
 
 测试使用真实 TypeSafe SDK、Cordis、skill registry、Session 投影和文件存储，HTTP 响应由测试提供。无需真实 key，也不产生 API 费用。尚未验证真实 TypeSafe 账户下的选择准确率或延迟。
 
