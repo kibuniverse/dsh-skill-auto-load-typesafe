@@ -1,6 +1,6 @@
 {
   "name": "dsh-skill-auto-load-typesafe",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Preload DeepSeek Harness skills selected by TypeSafe AI.",
   "author": "kibuniverse",
   "license": "MIT",
@@ -35,7 +35,7 @@
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/dsh-agent": "0.1.5-rc.3",
     "@deepseek-ai/dsh-credentials": "0.1.5-rc.3",
-    "@deepseek-ai/dsh-llm": "0.1.5-rc.3",
+    "@deepseek-ai/dsh-llm": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-skill": "0.1.5-rc.3",
     "@deepseek-ai/dsh-storage-domain": "0.1.5-rc.3"
   },
