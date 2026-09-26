@@ -1,6 +1,6 @@
 {
   "name": "dsh-skill-auto-load-typesafe",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Preload DeepSeek Harness skills selected by TypeSafe AI.",
   "author": "kibuniverse",
   "license": "MIT",

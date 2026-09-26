@@ -10,8 +10,9 @@
 
 | 项 | 值 |
 |---|---|
-| npm 包 | [`dsh-skill-auto-load-typesafe`](https://www.npmjs.com/package/dsh-skill-auto-load-typesafe)，当前 `latest` = `0.0.3` |
-| 适配版本 | Harness `@deepseek-ai/dsh@0.1.5-rc.3`（npm `latest`）、Cordis `4.0.2`、TypeSafe SDK `0.6.0`、Node `^22.19.0 \|\| >=24.0.0` |
+| npm 包 | [`dsh-skill-auto-load-typesafe`](https://www.npmjs.com/package/dsh-skill-auto-load-typesafe)，本文对应版本 `0.0.4`；已公开版本以 npm 页面为准 |
+| 已验证版本 | Harness `@deepseek-ai/dsh@0.1.5-rc.3`、Cordis `4.0.2`、TypeSafe SDK `0.6.0`、Node `^22.19.0 \|\| >=24.0.0` |
+| LLM 依赖范围 | `@deepseek-ai/dsh-llm@^0.1.5-rc.3`，允许后续 `0.1.x` 正式版本，不跨到 `0.2.0`；其他 Harness peer dependencies 仍固定 |
 | 挂载方式 | Host 单实例；`dsh.bundle.patch` 指向 `cordis.patch.yml` |
 | 依赖服务 | `agents`、`skills`、`credentials`、`storageDomain`（base-backed profile 默认提供） |
 | 监听事件 | `agent/pre-step`（prepend，先等待其他监听器的决定再追加注入） |
@@ -138,6 +139,10 @@ npm run build
 
 GitHub Actions 在 push 和 pull request 时使用 Node 22.19.0 执行 `npm ci`、类型检查、单元/集成测试和构建，不运行付费的 `test:live`。
 
+测试使用真实 TypeSafe SDK、Cordis、skill registry、Session 投影和文件存储，HTTP 响应由测试提供。无需真实 key，也不产生 API 费用。尚未验证真实 TypeSafe 账户下的选择准确率或延迟。
+
+设置环境变量 `TYPESAFE_API_KEY` 后，可显式执行 `npm run test:live`。它向 TypeSafe 发出一次真实选择请求，会产生 API 用量，只打印候选分数、选择结果和 usage。该 smoke 验证 SDK 与账户连接；不替代 Harness 中的完整会话测试。
+
 ## 发布
 
 npm 发包由 [GitHub Release](https://github.com/kibuniverse/dsh-skill-auto-load-typesafe/releases) 触发，不从维护者电脑直接上传，也不使用长期 `NPM_TOKEN`。工作流使用 npm Trusted Publishing（OIDC）和 staged publishing：先在无发布权限的任务中检查标签与 `package.json` 版本一致，完成类型检查、测试、构建并生成 tarball；再由只运行固定版本官方 Actions 的独立任务将该 tarball 提交到 npm staging。维护者检查内容并通过 2FA 批准后，版本才会公开。Trusted Publishing 会为公开包自动生成 provenance。
@@ -154,13 +159,21 @@ npm 发包由 [GitHub Release](https://github.com/kibuniverse/dsh-skill-auto-loa
 
 常规发布流程：
 
-1. 在独立 PR 中更新 `package.json` 和 `package-lock.json` 的版本，并合并到 `main`。
+1. 执行 `npm version <新版本> --no-git-tag-version` 同步更新 `package.json` 和 `package-lock.json`，更新 README，提交并合并到 `main`。
 2. 在该提交上创建 `v<package.version>` 标签（例如 `v0.0.4`），并发布同名 GitHub Release。
 3. `Stage npm release` 工作流自动验证并提交 staging；在 npm 的 **Staged Packages** 中检查内容并用 2FA 批准。
-4. npm 版本不可覆盖；如果 staging 内容有误，拒绝该 stage、修复并使用新的版本号，不要复用已公开的版本。
+4. 工作流成功表示已暂存，GitHub Release 已创建也不代表 npm 已公开。完成审批后再确认 npm 上的版本和 `latest` 标签。
 
-测试使用真实 TypeSafe SDK、Cordis、skill registry、Session 投影和文件存储，HTTP 响应由测试提供。无需真实 key，也不产生 API 费用。尚未验证真实 TypeSafe 账户下的选择准确率或延迟。
+维护者也可以使用 npm CLI（`>=11.15.0`）检查和批准暂存包：
 
-设置环境变量 `TYPESAFE_API_KEY` 后，可显式执行 `npm run test:live`。它向 TypeSafe 发出一次真实选择请求，会产生 API 用量，只打印候选分数、选择结果和 usage。该 smoke 验证 SDK 与账户连接；不替代 Harness 中的完整会话测试。
+```sh
+npm stage list dsh-skill-auto-load-typesafe
+npm stage view <stage-id>
+npm stage approve <stage-id>
+```
+
+批准操作需要维护者完成 2FA。可信发布配置或网络错误导致暂存前失败时，可在修复配置后重跑原工作流；已存在暂存包时应检查并批准已有 stage，避免重复上传。如果包内容需要修改，拒绝原 stage，使用新版本和新标签重新发布；已公开的 npm 版本不可覆盖。
+
+发布流程参考：[npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/)、[npm Staged Publishing](https://docs.npmjs.com/staged-publishing/)。
 
 参考：[TypeSafe JavaScript SDK](https://docs.typesafe.ai/sdk/javascript)、[Noul](https://docs.typesafe.ai/primitives/noul)、[Skill suggestion](https://docs.typesafe.ai/cookbooks/skill_suggestion)。
