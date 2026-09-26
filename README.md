@@ -10,7 +10,7 @@
 
 | 项 | 值 |
 |---|---|
-| npm 包 | [`dsh-skill-auto-load-typesafe`](https://www.npmjs.com/package/dsh-skill-auto-load-typesafe)，本文对应版本 `0.0.5`；已公开版本以 npm 页面为准 |
+| npm 包 | [`dsh-skill-auto-load-typesafe`](https://www.npmjs.com/package/dsh-skill-auto-load-typesafe)，最新版本以 npm 页面和 GitHub Releases 为准 |
 | 已验证版本 | Harness `@deepseek-ai/dsh@0.1.5-rc.3`、Cordis `4.0.2`、TypeSafe SDK `0.6.0`、Node `^22.19.0 \|\| >=24.0.0` |
 | LLM 依赖范围 | `@deepseek-ai/dsh-llm@^0.1.5-rc.3`，允许后续 `0.1.x` 正式版本，不跨到 `0.2.0`；其他 Harness peer dependencies 仍固定 |
 | 挂载方式 | Host 单实例；`dsh.bundle.patch` 指向 `cordis.patch.yml` |
@@ -145,7 +145,21 @@ GitHub Actions 在 push 和 pull request 时使用 Node 22.19.0 执行 `npm ci`�
 
 ## 发布
 
-npm 发包由 [GitHub Release](https://github.com/kibuniverse/dsh-skill-auto-load-typesafe/releases) 触发，不从维护者电脑直接上传，也不使用长期 `NPM_TOKEN`。工作流使用 npm Trusted Publishing（OIDC）和 staged publishing：先在无发布权限的任务中检查标签与 `package.json` 版本一致，完成类型检查、测试、构建并生成 tarball；再由只运行固定版本官方 Actions 的独立任务将该 tarball 提交到 npm staging。维护者检查内容并通过 2FA 批准后，版本才会公开。Trusted Publishing 会为公开包自动生成 provenance。
+npm 发包由合并到 `main` 后的 push 自动触发。`release.yml` 先在 Node 22.19.0 和 Node 24 上完成类型检查、测试与构建，再使用 semantic-release 分析自上次版本标签以来的提交，计算下一版本、生成发布说明、发布 npm 包并创建 Git 标签和 [GitHub Release](https://github.com/kibuniverse/dsh-skill-auto-load-typesafe/releases)。所有发布操作在同一个工作流完成，不依赖机器人创建的 Release 再触发其他工作流。
+
+推荐使用 **Squash and merge**，将 PR 标题写成 Conventional Commits 格式，并确认最终 squash commit 包含需要保留的破坏性变更说明：
+
+| 提交示例 | 自动版本变化 |
+|---|---|
+| `fix: 修复技能加载失败` | 补丁版本，例如 `0.0.5` → `0.0.6` |
+| `perf: 优化选择器开销` | 补丁版本 |
+| `feat: 支持新的选择模式` | 次版本，例如 `0.0.5` → `0.1.0` |
+| `feat!: 修改配置格式` 或正文包含 `BREAKING CHANGE:` | 主版本，例如 `0.0.5` → `1.0.0` |
+| `docs:`、`test:`、`ci:`、`chore:` 等无破坏性变更的提交 | 不发布，累计到后续功能或修复版本 |
+
+多个提交取最高级别的版本变化。直接推送到 `main` 也会触发相同流程。无需手动升版本、打标签、创建 Release 或逐次批准 npm 暂存包。
+
+版本以 `v*` Git 标签为基准；semantic-release 在 CI 内更新待发布包的版本，不把版本号提交回 `main`。因此仓库中的 `package.json` / 锁文件版本可保留开发基线，不代表 npm 最新版本。发布记录和变更说明以 GitHub Releases 为准。
 
 首次启用时，在 npm 包的 **Settings → Trusted Publisher** 添加 GitHub Actions：
 
@@ -153,27 +167,21 @@ npm 发包由 [GitHub Release](https://github.com/kibuniverse/dsh-skill-auto-loa
 - Repository：`dsh-skill-auto-load-typesafe`
 - Workflow filename：`release.yml`
 - Environment：留空
-- Allowed action：仅允许 `npm stage publish`，不要启用 `npm publish`
+- Allowed action：**允许 `npm publish`**；如果之前仅允许 `npm stage publish`，需修改此项
 
-确认一次 OIDC staging 成功后，将 npm 的 **Publishing access** 设置为 **Require two-factor authentication and disallow tokens**，并撤销不再需要的 npm automation token。
+工作流使用 GitHub 自动提供的 `GITHUB_TOKEN` 创建标签与 Release，通过 npm Trusted Publishing（OIDC）发布，不需要个人 GitHub token 或 `NPM_TOKEN`。npm 的 **Require two-factor authentication and disallow tokens** 设置不影响 OIDC 发布。公开仓库和公开包通过可信发布自动生成 provenance。
 
-常规发布流程：
+常规开发到发布流程：
 
-1. 执行 `npm version <新版本> --no-git-tag-version` 同步更新 `package.json` 和 `package-lock.json`，更新 README，提交并合并到 `main`。
-2. 在该提交上创建 `v<package.version>` 标签（例如 `v0.0.5`），并发布同名 GitHub Release。
-3. `Stage npm release` 工作流自动验证并提交 staging；在 npm 的 **Staged Packages** 中检查内容并用 2FA 批准。
-4. 工作流成功表示已暂存，GitHub Release 已创建也不代表 npm 已公开。完成审批后再确认 npm 上的版本和 `latest` 标签。
+1. 在开发分支修改代码和文档，运行 `npm run typecheck`、`npm test` 和 `npm run build`。
+2. 创建 PR，用上述提交格式命名，CI 通过后 squash 合并到 `main`。
+3. `Release` 工作流自动检查并发布；没有需要发布的提交时正常结束。
+4. 在 GitHub Releases 和 npm 页面查看版本与发布说明。
 
-维护者也可以使用 npm CLI（`>=11.15.0`）检查和批准暂存包：
+发布认证需要 GitHub Actions 环境，本地验证不执行真实发布。首次迁移前应处理完旧流程的待审批版本（例如 `0.0.5`），避免已存在 Git 标签而 npm 尚未公开的历史版本造成混淆。
 
-```sh
-npm stage list dsh-skill-auto-load-typesafe
-npm stage view <stage-id>
-npm stage approve <stage-id>
-```
+测试或认证检查在创建标签前失败时，可修正配置后重跑，或在 Actions 中对 `main` 手动运行 `Release`。若已创建标签或 npm 已上传而后续步骤失败，先核对对应 Git 标签、npm 版本和 GitHub Release，再补齐失败步骤；不要盲目删除标签或重复上传同一版本。若 GitHub ruleset 限制创建 `v*` 标签，需要为发布机器人配置相应权限。
 
-批准操作需要维护者完成 2FA。可信发布配置或网络错误导致暂存前失败时，可在修复配置后重跑原工作流；已存在暂存包时应检查并批准已有 stage，避免重复上传。如果包内容需要修改，拒绝原 stage，使用新版本和新标签重新发布；已公开的 npm 版本不可覆盖。
-
-发布流程参考：[npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/)、[npm Staged Publishing](https://docs.npmjs.com/staged-publishing/)。
+发布流程参考：[semantic-release GitHub Actions](https://semantic-release.org/recipes/ci-configurations/github-actions/)、[npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/)。
 
 参考：[TypeSafe JavaScript SDK](https://docs.typesafe.ai/sdk/javascript)、[Noul](https://docs.typesafe.ai/primitives/noul)、[Skill suggestion](https://docs.typesafe.ai/cookbooks/skill_suggestion)。
