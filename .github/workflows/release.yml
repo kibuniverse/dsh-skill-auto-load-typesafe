@@ -2,14 +2,14 @@ name: Release
 
 on:
   push:
-    branches: [main]
+    branches: [main, next, beta, rc]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: npm-release-main
+  group: npm-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -33,7 +33,6 @@ jobs:
       - run: npm run build
 
   release:
-    if: github.ref == 'refs/heads/main'
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 15

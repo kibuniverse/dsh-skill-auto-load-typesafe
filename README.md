@@ -145,7 +145,17 @@ GitHub Actions 在 push 和 pull request 时使用 Node 22.19.0 执行 `npm ci`�
 
 ## 发布
 
-npm 发包由合并到 `main` 后的 push 自动触发。`release.yml` 先在 Node 22.19.0 和 Node 24 上完成类型检查、测试与构建，再使用 semantic-release 分析自上次版本标签以来的提交，计算下一版本、生成发布说明、发布 npm 包并创建 Git 标签和 [GitHub Release](https://github.com/kibuniverse/dsh-skill-auto-load-typesafe/releases)。所有发布操作在同一个工作流完成，不依赖机器人创建的 Release 再触发其他工作流。
+npm 发包由推送到 `main`、`next`、`beta` 或 `rc` 分支自动触发。`release.yml` 先在 Node 22.19.0 和 Node 24 上完成类型检查、测试与构建，再使用 semantic-release 分析自上次版本标签以来的提交，计算下一版本、生成发布说明、发布 npm 包并创建 Git 标签和 [GitHub Release](https://github.com/kibuniverse/dsh-skill-auto-load-typesafe/releases)。所有发布操作在同一个工作流完成，不依赖机器人创建的 Release 再触发其他工作流。
+
+`main` 发布正式版本并更新 npm 的 `latest` dist-tag；预发布分支与版本后缀、dist-tag 一一对应：
+
+| 分支 | 版本示例 | npm dist-tag |
+|---|---|---|
+| `next` | `0.0.6-next.1` | `next` |
+| `beta` | `0.0.6-beta.1` | `beta` |
+| `rc` | `0.0.6-rc.1` | `rc` |
+
+创建对应分支并推送包含 `fix:`、`feat:` 或破坏性变更的 Conventional Commit，即可发布或递增该通道的预发布版本。例如，从最新 `main` 创建 `rc` 分支后推送 `fix: ...`，会发布类似 `0.0.6-rc.1` 的版本；后续符合发布条件的提交会递增为 `0.0.6-rc.2`。准备正式发布时，将预发布分支合并回 `main`，由 `main` 发布正式版本。三个预发布分支只用于对应通道，普通功能分支不会触发发包。
 
 推荐使用 **Squash and merge**，将 PR 标题写成 Conventional Commits 格式，并确认最终 squash commit 包含需要保留的破坏性变更说明：
 
@@ -174,8 +184,8 @@ npm 发包由合并到 `main` 后的 push 自动触发。`release.yml` 先在 No
 常规开发到发布流程：
 
 1. 在开发分支修改代码和文档，运行 `npm run typecheck`、`npm test` 和 `npm run build`。
-2. 创建 PR，用上述提交格式命名，CI 通过后 squash 合并到 `main`。
-3. `Release` 工作流自动检查并发布；没有需要发布的提交时正常结束。
+2. 需要预发布时，将改动合并到 `next`、`beta` 或 `rc`；需要正式发布时合并到 `main`。
+3. `Release` 工作流自动检查并发布到对应 npm dist-tag；没有需要发布的提交时正常结束。
 4. 在 GitHub Releases 和 npm 页面查看版本与发布说明。
 
 发布认证需要 GitHub Actions 环境，本地验证不执行真实发布。首次迁移前应处理完旧流程的待审批版本（例如 `0.0.5`），避免已存在 Git 标签而 npm 尚未公开的历史版本造成混淆。

@@ -1,5 +1,10 @@
 export default {
-  branches: ['main'],
+  branches: [
+    'main',
+    { name: 'next', channel: 'next', prerelease: 'next' },
+    { name: 'beta', channel: 'beta', prerelease: 'beta' },
+    { name: 'rc', channel: 'rc', prerelease: 'rc' },
+  ],
   tagFormat: 'v${version}',
   plugins: [
     ['@semantic-release/commit-analyzer', { preset: 'conventionalcommits' }],
