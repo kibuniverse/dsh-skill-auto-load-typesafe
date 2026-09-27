@@ -8,6 +8,10 @@ const record = z.object({
   startedAt: z.number(),
   endpoint: z.string(),
   request: z.json(),
+  /** UTF-8 byte size of the JSON request object before SDK dispatch. */
+  requestBytes: z.number().int().nonnegative().optional(),
+  /** Number of skill candidates represented by the request. */
+  catalogSize: z.number().int().nonnegative().optional(),
   status: z.enum(['started', 'completed', 'failed', 'aborted']),
   finishedAt: z.number().optional(),
   response: z.json().optional(),

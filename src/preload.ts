@@ -75,6 +75,8 @@ export async function preload(
     startedAt: Date.now(),
     endpoint: config.baseURL,
     request: z.json().parse(JSON.parse(JSON.stringify(request))),
+    requestBytes: Buffer.byteLength(JSON.stringify(request), 'utf8'),
+    catalogSize: candidates.length,
     status: 'started',
   }
   await audit(requestId, receipt)
