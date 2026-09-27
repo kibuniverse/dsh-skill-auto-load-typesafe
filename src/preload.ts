@@ -9,7 +9,7 @@ import { AuthenticationError, PermissionDeniedError, BadRequestError, Unprocessa
 import { z } from 'zod'
 import type { Options } from './config.js'
 import type { AuditRecord, WriteAudit } from './audit.js'
-import { buildRequest, parseSelection, requestSelection } from './selector.js'
+import { buildRequest, parseSelection, requestSelection, type Candidate } from './selector.js'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -55,13 +55,39 @@ export async function preload(
   }
   // Explicit gestures belong to tool-skill, even if its listener wraps this one.
   const explicit = new Set(Array.from(userInput.matchAll(/(?:^|\s)\/([a-z0-9]+(?:-[a-z0-9]+)*)(?=\s|$)/g), match => match[1]))
+  const existingMessages = [...agent.session.deriveMessages(), ...decision.messages]
+  const visibleTexts = new Set(existingMessages
+    .flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text))
+  const previouslyLoaded = new Set(existingMessages.flatMap(message => {
+    const source = message.source
+    return source.kind === 'skill-invocation' || source.kind === 'skill-auto-load-typesafe' ? [source.name] : []
+  }))
   const alreadyAdded = new Set(decision.messages.flatMap(message => {
     const source = message.source
     return source.kind === 'skill-invocation' || source.kind === 'skill-auto-load-typesafe' ? [source.name] : []
   }))
-  const candidates = snapshot.skills.filter(isModelInvocable)
-    .filter(skill => !explicit.has(skill.name) && !alreadyAdded.has(skill.name))
-    .map(skill => ({ name: skill.name, description: skill.description, whenToUse: skill.whenToUse ?? '' }))
+  const candidates: Candidate[] = []
+  for (const skill of snapshot.skills.filter(isModelInvocable)) {
+    if (explicit.has(skill.name) || alreadyAdded.has(skill.name)) continue
+    if (previouslyLoaded.has(skill.name)) {
+      // Keep the existing reload-on-content-change behavior while avoiding a paid
+      // selection request when the current version is already visible in history.
+      const current = await (async () => {
+        try {
+          return await ctx.skills.get(skill.name, lookup)
+        } catch {
+          // If this optional deduplication lookup fails, retain the candidate and let
+          // the normal selection/loading path determine whether the skill is needed.
+          signal.throwIfAborted()
+          ctx.logger.warn('TypeSafe skill deduplication skipped: skill lookup failed')
+          return undefined
+        }
+      })()
+      signal.throwIfAborted()
+      if (current && isModelInvocable(current) && visibleTexts.has(renderSkillContent(current))) continue
+    }
+    candidates.push({ name: skill.name, description: skill.description, whenToUse: skill.whenToUse ?? '' })
+  }
   const request = buildRequest(userInput, candidates, config)
   if (!request) return decision
 
@@ -104,8 +130,6 @@ export async function preload(
   const additions: UserMessage[] = []
   const skipped: { name: string; reason: string }[] = []
   let usedBytes = 0
-  const visibleTexts = new Set([...agent.session.deriveMessages(), ...decision.messages]
-    .flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text))
   try {
     for (const selected of result.selected) {
       if (additions.length >= config.maxSkills) break
