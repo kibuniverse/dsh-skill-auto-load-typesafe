@@ -2,14 +2,14 @@ name: Release
 
 on:
   push:
-    branches: [main]
+    branches: [main, next, beta, rc]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: npm-release-main
+  group: npm-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -33,7 +33,7 @@ jobs:
       - run: npm run build
 
   release:
-    if: github.ref == 'refs/heads/main'
+    if: contains(fromJSON('["refs/heads/main", "refs/heads/next", "refs/heads/beta", "refs/heads/rc"]'), github.ref)
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -48,11 +48,11 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
-          # semantic-release manages npm authentication; do not set registry-url.
+          # npm stage publish obtains OIDC credentials; do not set registry-url.
           package-manager-cache: false
       - run: npm ci --ignore-scripts
       - run: npm run build
-      - name: Publish npm package and GitHub Release
+      - name: Stage npm package and create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run release

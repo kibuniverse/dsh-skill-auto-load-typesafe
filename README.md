@@ -145,7 +145,17 @@ GitHub Actions 在 push 和 pull request 时使用 Node 22.19.0 执行 `npm ci`�
 
 ## 发布
 
-npm 发包由合并到 `main` 后的 push 自动触发。`release.yml` 先在 Node 22.19.0 和 Node 24 上完成类型检查、测试与构建，再使用 semantic-release 分析自上次版本标签以来的提交，计算下一版本、生成发布说明、发布 npm 包并创建 Git 标签和 [GitHub Release](https://github.com/kibuniverse/dsh-skill-auto-load-typesafe/releases)。所有发布操作在同一个工作流完成，不依赖机器人创建的 Release 再触发其他工作流。
+npm 暂存发布由推送到 `main`、`next`、`beta` 或 `rc` 分支自动触发。`release.yml` 先在 Node 22.19.0 和 Node 24 上完成类型检查、测试与构建，再使用 semantic-release 计算下一版本、生成发布说明和 Git 标签。npm 插件只准备版本与 tarball，本地 staging 插件使用锁定的 npm 11.20.0 执行 `npm stage publish`，确认返回的包名、版本和 stage ID 后创建 [GitHub Release](https://github.com/kibuniverse/dsh-skill-auto-load-typesafe/releases)。npm 包需维护者审核并通过 2FA 批准后才会公开；GitHub Release 会注明此流程，不代表 npm 审批已经完成。
+
+`main` 暂存正式版本，批准后更新 npm 的 `latest` dist-tag；预发布分支与版本后缀、批准后的 dist-tag 一一对应：
+
+| 分支 | 版本示例 | npm dist-tag |
+|---|---|---|
+| `next` | `0.0.6-next.1` | `next` |
+| `beta` | `0.0.6-beta.1` | `beta` |
+| `rc` | `0.0.6-rc.1` | `rc` |
+
+创建对应分支并推送包含 `fix:`、`feat:` 或破坏性变更的 Conventional Commit，即可发布或递增该通道的预发布版本。例如，从最新 `main` 创建 `rc` 分支后推送 `fix: ...`，会发布类似 `0.0.6-rc.1` 的版本；后续符合发布条件的提交会递增为 `0.0.6-rc.2`。准备正式发布时，将预发布分支合并回 `main`，由 `main` 发布正式版本。三个预发布分支只用于对应通道，普通功能分支不会触发发包。
 
 推荐使用 **Squash and merge**，将 PR 标题写成 Conventional Commits 格式，并确认最终 squash commit 包含需要保留的破坏性变更说明：
 
@@ -157,7 +167,7 @@ npm 发包由合并到 `main` 后的 push 自动触发。`release.yml` 先在 No
 | `feat!: 修改配置格式` 或正文包含 `BREAKING CHANGE:` | 主版本，例如 `0.0.5` → `1.0.0` |
 | `docs:`、`test:`、`ci:`、`chore:` 等无破坏性变更的提交 | 不发布，累计到后续功能或修复版本 |
 
-多个提交取最高级别的版本变化。直接推送到 `main` 也会触发相同流程。无需手动升版本、打标签、创建 Release 或逐次批准 npm 暂存包。
+多个提交取最高级别的版本变化。直接推送到 `main` 也会触发相同流程。无需手动升版本、打标签或创建 Release；每个 npm 暂存包均需人工审批。
 
 版本以 `v*` Git 标签为基准；semantic-release 在 CI 内更新待发布包的版本，不把版本号提交回 `main`。因此仓库中的 `package.json` / 锁文件版本可保留开发基线，不代表 npm 最新版本。发布记录和变更说明以 GitHub Releases 为准。
 
@@ -167,21 +177,28 @@ npm 发包由合并到 `main` 后的 push 自动触发。`release.yml` 先在 No
 - Repository：`dsh-skill-auto-load-typesafe`
 - Workflow filename：`release.yml`
 - Environment：留空
-- Allowed action：**允许 `npm publish`**；如果之前仅允许 `npm stage publish`，需修改此项
+- Allowed action：**允许 `npm stage publish`**；本流程不需要直接 `npm publish` 权限
 
-工作流使用 GitHub 自动提供的 `GITHUB_TOKEN` 创建标签与 Release，通过 npm Trusted Publishing（OIDC）发布，不需要个人 GitHub token 或 `NPM_TOKEN`。npm 的 **Require two-factor authentication and disallow tokens** 设置不影响 OIDC 发布。公开仓库和公开包通过可信发布自动生成 provenance。
+工作流使用 GitHub 自动提供的 `GITHUB_TOKEN` 创建标签与 Release，通过 npm Trusted Publishing（OIDC）提交暂存包，不需要个人 GitHub token 或 `NPM_TOKEN`。npm 的 **Require two-factor authentication and disallow tokens** 设置不影响 OIDC 暂存。审批需要维护者本人登录并完成 2FA，不能使用工作流 OIDC 自动批准。
 
 常规开发到发布流程：
 
 1. 在开发分支修改代码和文档，运行 `npm run typecheck`、`npm test` 和 `npm run build`。
-2. 创建 PR，用上述提交格式命名，CI 通过后 squash 合并到 `main`。
-3. `Release` 工作流自动检查并发布；没有需要发布的提交时正常结束。
-4. 在 GitHub Releases 和 npm 页面查看版本与发布说明。
+2. 需要预发布时，将改动合并到 `next`、`beta` 或 `rc`；需要正式发布时合并到 `main`。
+3. `Release` 工作流自动检查并暂存对应通道的包；没有需要发布的提交时正常结束。成功暂存的 stage ID 和目标 dist-tag 显示在 Actions 运行摘要中。
+4. 在 npmjs.com 的 Staged Packages 中核对版本并通过 2FA 批准，或用支持 staging 的 npm CLI 执行以下命令：
 
-发布认证需要 GitHub Actions 环境，本地验证不执行真实发布。首次迁移前应处理完旧流程的待审批版本（例如 `0.0.5`），避免已存在 Git 标签而 npm 尚未公开的历史版本造成混淆。
+```sh
+npm stage list dsh-skill-auto-load-typesafe
+npm stage view <stage-id>
+npm stage approve <stage-id>
+npm view dsh-skill-auto-load-typesafe dist-tags --json
+```
 
-测试或认证检查在创建标签前失败时，可修正配置后重跑，或在 Actions 中对 `main` 手动运行 `Release`。若已创建标签或 npm 已上传而后续步骤失败，先核对对应 Git 标签、npm 版本和 GitHub Release，再补齐失败步骤；不要盲目删除标签或重复上传同一版本。若 GitHub ruleset 限制创建 `v*` 标签，需要为发布机器人配置相应权限。
+发布认证需要 GitHub Actions 环境，本地测试不执行真实暂存或审批。当前历史 `v0.0.6` 标签保留；本次修复使用 `fix(release): ...` 提交，若期间没有其他升级，合并至 `main` 后下一版本为 `0.0.7`。该方案跳过 `0.0.6`，不补发或删除其标签。
 
-发布流程参考：[semantic-release GitHub Actions](https://semantic-release.org/recipes/ci-configurations/github-actions/)、[npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/)。
+测试或 OIDC 环境检查在创建标签前失败时，可修正配置后重跑，或在 Actions 中对发布分支手动运行 `Release`。semantic-release 会在上传前创建标签，实际认证或上传失败仍可能留下标签；若标签已经存在，重跑不会补发同一版本。此时先核对 staging queue、npm 版本、Git 标签和 GitHub Release：包已暂存则审批已有 stage；没有上传则修正问题后用新的 `fix:` 提交触发下一 patch 版本。不要盲目删除标签或重复上传。若 GitHub ruleset 限制创建 `v*` 标签，需要为发布机器人配置相应权限。
+
+发布流程参考：[semantic-release GitHub Actions](https://semantic-release.org/recipes/ci-configurations/github-actions/)、[npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/)、[npm Staged Publishing](https://docs.npmjs.com/staged-publishing/)。
 
 参考：[TypeSafe JavaScript SDK](https://docs.typesafe.ai/sdk/javascript)、[Noul](https://docs.typesafe.ai/primitives/noul)、[Skill suggestion](https://docs.typesafe.ai/cookbooks/skill_suggestion)。
