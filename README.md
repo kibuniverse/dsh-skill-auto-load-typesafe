@@ -12,7 +12,7 @@
 |---|---|
 | npm 包 | [`dsh-skill-auto-load-typesafe`](https://www.npmjs.com/package/dsh-skill-auto-load-typesafe)，最新版本以 npm 页面和 GitHub Releases 为准 |
 | 已验证版本 | Harness `@deepseek-ai/dsh@0.1.5-rc.3`、Cordis `4.0.2`、TypeSafe SDK `0.6.0`、Node `^22.19.0 \|\| >=24.0.0` |
-| LLM 依赖范围 | `@deepseek-ai/dsh-llm@^0.1.5-rc.3`，允许后续 `0.1.x` 正式版本，不跨到 `0.2.0`；其他 Harness peer dependencies 仍固定 |
+| Harness 依赖范围 | Harness peer dependencies 为 `^0.1.5-rc.3`，允许后续 `0.1.x` 正式版本，不跨到 `0.2.0`；其他 prerelease 版本需要单独验证；Cordis 固定为 `4.0.2` |
 | 挂载方式 | Host 单实例；`dsh.bundle.patch` 指向 `cordis.patch.yml` |
 | 依赖服务 | `agents`、`skills`、`credentials`、`storageDomain`（base-backed profile 默认提供） |
 | 监听事件 | `agent/pre-step`（prepend，先等待其他监听器的决定再追加注入） |
@@ -23,16 +23,24 @@
 ## 快速开始
 
 ```sh
-# 1. 按 profile 安装（dsh plugin 底层为 pnpm，按包名从 npm 拉取）
+# 1. 确认运行环境；当前已验证的 Harness 版本是 0.1.5-rc.3
+node --version
+dsh --version
+
+# 2. 按 profile 安装（dsh plugin 底层为 pnpm，按包名从 npm 拉取）
 dsh plugin --profile web add dsh-skill-auto-load-typesafe
 
-# 2. 配置凭据：在 Harness 凭据存储设置 TYPESAFE_API_KEY，
-#    或在启动 Harness 的 shell 中 export TYPESAFE_API_KEY=...
+# 3. 从 https://console.typesafe.ai 获取 API key，并任选一种方式配置；
+#    最直接的方式是在启动 Harness 的同一个 shell 中设置环境变量
+export TYPESAFE_API_KEY='<your-typesafe-api-key>'
 
-# 3. 重启 Harness，向 standard preset 的 Agent 发送一条用户消息即可触发
+# 4. 启动或重启 Harness
+dsh web
 ```
 
-默认配置即可运行。调整 preset 范围、阈值、预算等见下方[配置](#配置)。
+也可以通过 Harness 配置界面或凭据文件持久化密钥，详见下方[配置 `TYPESAFE_API_KEY`](#配置-typesafe_api_key)。完成凭据配置后，默认插件配置即可运行；向 `standard` preset 的 Agent 发送一条用户消息即可触发。调整 preset 范围、阈值、预算等见下方[插件配置](#插件配置)。
+
+启用后，每个符合条件的用户回合会向 TypeSafe 发出一次选择请求，可能产生 API 用量并增加请求延迟。发送和持久化的数据范围见[持久化与数据流](#持久化与数据流)。
 
 ## 安装与启用
 
@@ -45,6 +53,7 @@ dsh plugin --profile web add dsh-skill-auto-load-typesafe
 从本地目录安装（用于开发改动）：
 
 ```sh
+npm ci
 npm run build
 dsh plugin --profile web add /absolute/path/to/dsh-skill-auto-load-typesafe
 ```
@@ -53,9 +62,47 @@ dsh plugin --profile web add /absolute/path/to/dsh-skill-auto-load-typesafe
 
 默认仅对 `standard` preset 的 Agent 生效；`minimal`、`ptc` 等不自动启用。Host 挂载让多个会话共用审计存储；每次 skill 查询仍传入当前 Agent scope，因此不会混入其他 preset 的 skills。不要在多个 preset 中重复挂载该插件，它的审计 domain 由单一 Host 实例拥有。
 
-在 Harness 的凭据存储中设置 `TYPESAFE_API_KEY`，或在启动 Harness 的 shell 中提供该环境变量。项目 `.env` 也由 Harness 的凭据服务处理；本插件不自行加载 `.env`。SDK 每次请求显式使用解析出的 key，因此凭据更新在下一次请求生效。不要把 key 写入 `cordis.patch.yml` 或提交到 Git。
+### 配置 `TYPESAFE_API_KEY`
 
-## 配置
+先登录 [TypeSafe Dashboard](https://console.typesafe.ai) 创建或复制 API key，然后任选一种方式提供名为 `TYPESAFE_API_KEY` 的凭据：
+
+1. **Harness 配置界面（推荐持久化方式）**：在配置界面保存名为 `TYPESAFE_API_KEY` 的凭据。界面可以显示是否已配置及凭据来源，但不会回显密钥值。
+2. **启动环境变量**：在启动 Harness 的同一个 shell 中执行 `export TYPESAFE_API_KEY='<your-typesafe-api-key>'`，再运行 `dsh web`。环境变量只在该进程启动时读取，更换后需要重启 Harness。
+3. **本地凭据文件**：编辑 `$DSH_HOME/.credentials.yaml`；未设置 `DSH_HOME` 时通常是 `~/.dsh/.credentials.yaml`。如果文件已经存在，请合并 `refs` 字段，不要覆盖其他凭据：
+
+```yaml
+version: 1
+refs:
+  TYPESAFE_API_KEY: <your-typesafe-api-key>
+```
+
+凭据文件应仅允许当前 OS 用户读取：
+
+```sh
+chmod 600 "${DSH_HOME:-$HOME/.dsh}/.credentials.yaml"
+```
+
+Harness 的凭据解析优先级为：启动环境变量、凭据文件、项目 `.env`、Harness home 下的 `.env`。启动环境变量为只读且会遮蔽其他来源；凭据文件变更会自动重载。插件在每次请求前重新解析 key，因此通过配置界面或凭据文件更新的值会用于下一次请求。
+
+`apiKeyEnv` 配置项只能保持为凭据引用 `TYPESAFE_API_KEY`，不能填写密钥值。不要把 key 写入 `cordis.patch.yml`、README 或提交到 Git。本插件不自行加载 `.env`，这些来源统一由 Harness 凭据服务处理。
+
+### 验证安装
+
+安装后可以先确认插件补丁已经进入 `web` profile：
+
+```sh
+dsh --profile web --dump-config | rg -n -C 2 skill-auto-load-typesafe
+```
+
+预期输出包含 `id: skill-auto-load-typesafe` 和 `name: dsh-skill-auto-load-typesafe`。随后启动或重启 `dsh web`，向 `standard` preset 的 Agent 发送一条包含明确任务的用户消息。若存在可见且适用的 skill，插件会把选中的完整指令加入同一次模型请求；没有 skill 达到阈值时不注入内容也属于正常结果。
+
+从源码开发且愿意产生一次真实 TypeSafe API 用量时，还可以先验证凭据和服务连接：
+
+```sh
+TYPESAFE_API_KEY='<your-typesafe-api-key>' npm run test:live
+```
+
+## 插件配置
 
 在 profile 的 `cordis.patch.yml` 中按插件行 ID 覆盖：
 
@@ -195,7 +242,7 @@ npm stage approve <stage-id>
 npm view dsh-skill-auto-load-typesafe dist-tags --json
 ```
 
-发布认证需要 GitHub Actions 环境，本地测试不执行真实暂存或审批。当前历史 `v0.0.6` 标签保留；本次修复使用 `fix(release): ...` 提交，若期间没有其他升级，合并至 `main` 后下一版本为 `0.0.7`。该方案跳过 `0.0.6`，不补发或删除其标签。
+发布认证需要 GitHub Actions 环境，本地测试不执行真实暂存或审批。历史标签应保留，不补发或删除；需要重新触发发布时使用新的发布型提交生成下一版本。
 
 测试或 OIDC 环境检查在创建标签前失败时，可修正配置后重跑，或在 Actions 中对发布分支手动运行 `Release`。semantic-release 会在上传前创建标签，实际认证或上传失败仍可能留下标签；若标签已经存在，重跑不会补发同一版本。此时先核对 staging queue、npm 版本、Git 标签和 GitHub Release：包已暂存则审批已有 stage；没有上传则修正问题后用新的 `fix:` 提交触发下一 patch 版本。不要盲目删除标签或重复上传。若 GitHub ruleset 限制创建 `v*` 标签，需要为发布机器人配置相应权限。
 
