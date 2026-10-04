@@ -157,7 +157,7 @@ TYPESAFE_API_KEY='<your-typesafe-api-key>' npm run test:live
 
 主模型看到的 skill 正文通过标准 `user/message` 持久化；来源为 `skill-auto-load-typesafe`，带有 skill 名称和审计请求 ID。插件不新增 Session 事件类型，因此移除插件后，标准 Session 读取器仍能重放这些消息。
 
-TypeSafe 调用前，插件在 `ctx.storageDomain` 的 `skill_auto_load_typesafe` domain、`requests` 表写入 `started` 记录。记录包含 Session ID、用户消息 ID、endpoint 和实际 JSON 请求。完成后保存验证后的响应、选择名称、已准备的正文名称和跳过原因；失败保存分类。`selected` 包含所有达到阈值的候选，`loaded` 仅包含实际新增的技能，`skipped` 记录达到加载数量上限前检查过的跳过项。`completed` 表示插件已经准备好消息，不保证后续主模型请求成功。进程意外退出可能留下 `started`；插件不会据此自动重发。取消可能发生在正文准备或审计落盘后，最终是否提交以 Session 日志为准。
+TypeSafe 调用前，插件在 `ctx.storageDomain` 的 `skill_auto_load_typesafe` domain、`requests` 表写入 `started` 记录。记录包含 Session ID、用户消息 ID、endpoint、实际 JSON 请求、请求 JSON 的 UTF-8 字节数和候选数量。完成后保存验证后的响应、选择名称、已准备的正文名称和跳过原因；失败保存分类。`selected` 包含所有达到阈值的候选，`loaded` 仅包含实际新增的技能，`skipped` 记录达到加载数量上限前检查过的跳过项。`completed` 表示插件已经准备好消息，不保证后续主模型请求成功。进程意外退出可能留下 `started`；插件不会据此自动重发。取消可能发生在正文准备或审计落盘后，最终是否提交以 Session 日志为准。
 
 默认 JSON backend 将该 domain 放在 Harness 的 storage root 下，通常为 `$DSH_HOME/storages`。这些审计记录不随 Session 导出或 fork 复制。当前版本不自动清理审计历史，部署方需要管理保留周期和存储空间。
 
