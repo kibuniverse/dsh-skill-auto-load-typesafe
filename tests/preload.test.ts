@@ -44,9 +44,11 @@ describe('skill preloading', () => {
     const snapshot = await ctx.skills.snapshot(lookup)
     reply(snapshot.skills.map(skill => skill.name === 'review' ? 0.99 : skill.name === 'tests' ? 0.9 : 0.8))
     if (reason === 'already-visible') {
+      // Plain visible text exercises the post-selection safety net; skill-sourced
+      // blocks are deduplicated before the request (covered by the test below).
       agent.session.append('user/message', createUserMessage({
         content: [{ type: 'text', text: renderSkillContent(review) }],
-        source: { kind: 'skill-invocation', name: 'review', form: 'instructions' },
+        source: { kind: 'user' },
       }), { surfaceOp: 'append' })
     }
     const get = vi.spyOn(ctx.skills, 'get')
@@ -154,8 +156,8 @@ describe('skill preloading', () => {
     get.mockRestore()
   })
 
-  it('does not duplicate currently visible instructions, but reloads for a fresh history', async () => {
-    reply([0.9])
+  it('skips a redundant selection request for visible skills, but reloads for a fresh history', async () => {
+    const fetch = reply([0.9])
     const agent = makeAgent(ctx)
     const decision: PreStepDecision = { kind: 'enter', messages: [user()] }
     const first = await preload(ctx, config, audit, agent, decision, signal())
@@ -163,9 +165,12 @@ describe('skill preloading', () => {
     for (const message of first.messages) agent.session.append('user/message', message, { surfaceOp: 'append' })
     const next: PreStepDecision = { kind: 'enter', messages: [user('Review again')] }
     expect(await preload(ctx, config, audit, agent, next, signal())).toBe(next)
-    expect(records.at(-1)?.skipped?.[0]?.reason).toBe('already-visible')
+    // Deduplication happens before the request: no second paid call, no new audit record.
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(records.at(-1)?.loaded).toEqual(['review'])
     const fresh = await preload(ctx, config, audit, makeAgent(ctx), next, signal())
     expect(fresh.kind === 'enter' && fresh.messages.length).toBe(2)
+    expect(fetch).toHaveBeenCalledTimes(2)
   })
 
   it('keeps skills whole when the injection budget is insufficient', async () => {
